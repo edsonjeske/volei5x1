@@ -829,17 +829,29 @@
     // Limites ocupados pelos pés: minY = pé mais perto da rede, maxY = pé mais longe da rede
     function footBounds(pl) {
       const feet = getFeet(pl);
+      const lo = (key, size) => feet.reduce((bi, f, i) => (f[key] - f[size] < feet[bi][key] - feet[bi][size] ? i : bi), 0);
+      const hi = (key, size) => feet.reduce((bi, f, i) => (f[key] + f[size] > feet[bi][key] + feet[bi][size] ? i : bi), 0);
+      const iMinX = lo('x', 'hx'), iMaxX = hi('x', 'hx'), iMinY = lo('y', 'hy'), iMaxY = hi('y', 'hy');
       return {
-        minX: Math.min(...feet.map(f => f.x - f.hx)),
-        maxX: Math.max(...feet.map(f => f.x + f.hx)),
-        minY: Math.min(...feet.map(f => f.y - f.hy)),
-        maxY: Math.max(...feet.map(f => f.y + f.hy))
+        minX: feet[iMinX].x - feet[iMinX].hx,
+        maxX: feet[iMaxX].x + feet[iMaxX].hx,
+        minY: feet[iMinY].y - feet[iMinY].hy,
+        maxY: feet[iMaxY].y + feet[iMaxY].hy,
+        iMinX, iMaxX, iMinY, iMaxY
       };
     }
 
-    function drawFeet(pl) {
+    // Pés que causam a falta (ficam vermelhos): os dois pés que definem o limite violado
+    function redFeetOf(pl) {
+      const set = new Set();
+      faults.forEach(f => f.feet.forEach(([who, idx]) => { if (who.id === pl.id) set.add(idx); }));
+      return set;
+    }
+
+    function drawFeet(pl, redFeet) {
       const rx = FOOT_RX, ry = FOOT_RY;
       getFeet(pl).forEach((f, i) => {
+        const infringing = redFeet && redFeet.has(i);
         ctx.save();
         ctx.translate(f.x, f.y);
         ctx.rotate(f.rot);
@@ -856,7 +868,7 @@
           ctx.ellipse(ex, ey, erx + 1.8, ery + 1.8, 0, 0, Math.PI * 2);
           ctx.fill();
         });
-        ctx.fillStyle = '#f8fafc';
+        ctx.fillStyle = infringing ? '#ef4444' : '#f8fafc';
         parts.forEach(([ex, ey, erx, ery]) => {
           ctx.beginPath();
           ctx.ellipse(ex, ey, erx, ery, 0, 0, Math.PI * 2);
@@ -885,20 +897,20 @@
       // 7.4.2.1 / 7.4.3.1: jogador de trás precisa ter ao menos parte de um pé no mesmo nível
       // (ou mais longe da rede) que o pé da frente do jogador da frente correspondente
       if (fb[5].maxY < fb[4].minY) {
-        faults.push({ p1: p[5], p2: p[4], msg: `P5 (${p[5].role}) ultrapassou P4 (${p[4].role}) em relação à rede.` });
+        faults.push({ p1: p[5], p2: p[4], feet: [[p[5], fb[5].iMaxY], [p[4], fb[4].iMinY]], msg: `P5 (${p[5].role}) ultrapassou P4 (${p[4].role}) em relação à rede.` });
       }
       if (fb[6].maxY < fb[3].minY) {
-        faults.push({ p1: p[6], p2: p[3], msg: `P6 (${p[6].role}) ultrapassou P3 (${p[3].role}) em relação à rede.` });
+        faults.push({ p1: p[6], p2: p[3], feet: [[p[6], fb[6].iMaxY], [p[3], fb[3].iMinY]], msg: `P6 (${p[6].role}) ultrapassou P3 (${p[3].role}) em relação à rede.` });
       }
       if (fb[1].maxY < fb[2].minY) {
-        faults.push({ p1: p[1], p2: p[2], msg: `P1 (${p[1].role}) ultrapassou P2 (${p[2].role}) em relação à rede.` });
+        faults.push({ p1: p[1], p2: p[2], feet: [[p[1], fb[1].iMaxY], [p[2], fb[2].iMinY]], msg: `P1 (${p[1].role}) ultrapassou P2 (${p[2].role}) em relação à rede.` });
       }
 
       // 7.4.2.2 / 7.4.3.2: ordem lateral — o da esquerda precisa ter ao menos parte de um pé
       // no mesmo nível (ou mais à esquerda) que o pé mais à direita do vizinho
       const lateral = (l, r) => {
         if (fb[l].minX > fb[r].maxX) {
-          faults.push({ p1: p[l], p2: p[r], msg: `P${l} (${p[l].role}) cruzou à direita de P${r} (${p[r].role}).` });
+          faults.push({ p1: p[l], p2: p[r], feet: [[p[l], fb[l].iMinX], [p[r], fb[r].iMaxX]], msg: `P${l} (${p[l].role}) cruzou à direita de P${r} (${p[r].role}).` });
         }
       };
       lateral(4, 3);
@@ -1098,7 +1110,7 @@
           ctx.setLineDash([]);
         }
 
-        drawFeet(p);
+        drawFeet(p, redFeetOf(p));
 
         ctx.beginPath();
         ctx.arc(p.x, p.y + 4, tokenRadius, 0, Math.PI * 2);
@@ -1265,7 +1277,7 @@
     }
 
     // Pezinhos do jogador no tutorial (mesmo desenho e posição do app, na escala do jogador)
-    function tutFeet(x, y, r) {
+    function tutFeet(x, y, r, red) {
       const k = r / 26;
       let out = '';
       FOOT_DEFS.forEach((f, i) => {
@@ -1276,7 +1288,8 @@
         ];
         out += `<g transform="translate(${(x + f.dx * k).toFixed(2)} ${(y + f.dy * k).toFixed(2)}) rotate(${(f.rot * 180 / Math.PI).toFixed(1)}) scale(${sx.toFixed(3)} ${k.toFixed(3)})">`;
         parts.forEach(([ex, ey, erx, ery]) => { out += `<ellipse cx="${ex}" cy="${ey}" rx="${erx + 1.8}" ry="${ery + 1.8}" fill="#0f172a"/>`; });
-        parts.forEach(([ex, ey, erx, ery]) => { out += `<ellipse cx="${ex}" cy="${ey}" rx="${erx}" ry="${ery}" fill="#f8fafc"/>`; });
+        const fillCol = red && red.includes(i) ? '#ef4444' : '#f8fafc';
+        parts.forEach(([ex, ey, erx, ery]) => { out += `<ellipse cx="${ex}" cy="${ey}" rx="${erx}" ry="${ery}" fill="${fillCol}"/>`; });
         out += `</g>`;
       });
       return out;
@@ -1303,7 +1316,7 @@
       if (o.halo) {
         s += `<circle cx="${x}" cy="${y}" r="${r + (o.gap || 5)}" fill="${o.haloFill || 'none'}" stroke="${o.halo}" stroke-width="2"${o.dash ? ` stroke-dasharray="${o.dash}"` : ''}/>`;
       }
-      if (o.feet !== false) s += tutFeet(x, y, r);
+      if (o.feet !== false) s += tutFeet(x, y, r, o.redFeet);
       s += `<circle cx="${x}" cy="${y + 2}" r="${r}" fill="rgba(0,0,0,.35)"/>`;
       s += `<circle cx="${x}" cy="${y}" r="${r}" fill="${color}" stroke="${o.stroke || '#fff'}" stroke-width="2"/>`;
       const t = 'text-anchor="middle" dominant-baseline="central" font-weight="700"';
@@ -1406,7 +1419,7 @@
       },
       {
         title: 'Faltas de posição',
-        text: 'A falta é medida pelos pés. Aqui o P5 passou totalmente para a direita dos pés do P6. Uma linha vermelha tracejada liga os dois jogadores em falta, e a barra de status mostra quantas faltas existem e qual foi a primeira.',
+        text: 'A falta é medida pelos pés. Aqui o P5 passou totalmente para a direita dos pés do P6. Os dois pés que causam a falta ficam vermelhos, uma linha vermelha tracejada liga os jogadores, e a barra de status mostra quantas faltas existem e qual foi a primeira.',
         svg: (() => {
           const c = { x: 14, y: 8, w: 112, h: 174 };
           let s = tutCourt(c);
@@ -1414,9 +1427,9 @@
           const b = tutPos(c, 6);
           s += `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="#ef4444" stroke-width="3.5" stroke-dasharray="6 4"/>`;
           [[4, TUT.green, 'C'], [3, TUT.blue, 'P'], [2, TUT.red, 'L'], [6, TUT.blue, 'P'], [1, TUT.yellow, 'Lib']].forEach(([n, col, lab]) => {
-            const p = tutPos(c, n); s += tutToken(p.x, p.y, 10, col, null, lab);
+            const p = tutPos(c, n); s += tutToken(p.x, p.y, 10, col, null, lab, n === 6 ? { redFeet: [1] } : {});
           });
-          s += tutToken(a.x, a.y, 10, TUT.purple, null, 'O');
+          s += tutToken(a.x, a.y, 10, TUT.purple, null, 'O', { redFeet: [0] });
           s += `<rect x="142" y="26" width="170" height="104" rx="10" fill="#1e293b" stroke="#334155"/>`;
           s += `<rect x="152" y="38" width="74" height="20" rx="10" fill="rgba(239,68,68,.2)" stroke="#ef4444"/>`;
           s += tutText(189, 48.5, '1 FALTA(S)', 10, '#f87171', 'middle', 800);
@@ -1476,8 +1489,9 @@
           let s = tutText(67, 14, 'Bagunçado', 12, '#94a3b8', 'middle', 700) + tutText(253, 14, 'Padrão', 12, '#94a3b8', 'middle', 700);
           s += tutCourt(A) + tutCourt(B);
           s += `<line x1="38" y1="112" x2="38" y2="64" stroke="#ef4444" stroke-width="3" stroke-dasharray="5 3"/>`;
-          [[38, 112, TUT.green, 'C'], [38, 64, TUT.purple, 'O'], [68, 88, TUT.blue, 'P'], [94, 138, TUT.red, 'L'], [62, 154, TUT.yellow, 'Lib'], [98, 56, TUT.blue, 'P']].forEach(([x, y, col, lab]) => {
-            s += tutToken(x, y, 11, col, null, lab);
+          // C (frente): pé da frente em vermelho; O (de trás, que passou à frente): pé de trás em vermelho
+          [[38, 112, TUT.green, 'C', [0]], [38, 64, TUT.purple, 'O', [1]], [68, 88, TUT.blue, 'P'], [94, 138, TUT.red, 'L'], [62, 154, TUT.yellow, 'Lib'], [98, 56, TUT.blue, 'P']].forEach(([x, y, col, lab, red]) => {
+            s += tutToken(x, y, 11, col, null, lab, red ? { redFeet: red } : {});
           });
           s += tutDefaultTokens(B, 11);
           s += `<rect x="134" y="78" width="52" height="44" rx="10" fill="#334155" stroke="#475569" stroke-width="2"/>`;
