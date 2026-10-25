@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>VôleiRegra - Sandbox de Posicionamento FIVB</title>
+  <style>
+    :root {
+      --bg-dark: #0f172a;
+      --card-bg: #1e293b;
+      --setter-red: #dc2626;
+      --libero-yellow: #f59e0b;
+      --spiker-blue: #2563eb;
+      --middle-green: #10b981;
+      --opposite-purple: #7c3aed;
+      --text-main: #f8fafc;
+      --danger: #ef4444;
+      --success: #10b981;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* v2: o documento NÃO tem área rolável. O body fica fixo na janela,
+       então não existe nem 1px de rolagem para o navegador "roubar" o gesto. */
+    /* esconde qualquer barra de rolagem */
+    html, body, * {
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+    html::-webkit-scrollbar, body::-webkit-scrollbar, *::-webkit-scrollbar {
+      display: none;
+      width: 0;
+      height: 0;
+    }
+
+    html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      overscroll-behavior: none;
+      touch-action: none;
+      background-color: var(--bg-dark);
+    }
+
+    body {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: var(--app-h, 100%);
+      overflow: hidden;
+      overscroll-behavior: none;
+      touch-action: none;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      padding: 6px;
+    }
+
+    /* Layout em coluna que ocupa exatamente a tela (sem rolagem) */
+    .container {
+      width: 100%;
+      height: calc(var(--app-h, 100%) - 12px);
+      max-width: 500px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .controls-card {
+      flex: 0 0 auto;
+      background: var(--card-bg);
+      padding: 6px 8px;
+      border-radius: 10px;
+      border: 1px solid #334155;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .controls-label {
+      font-size: 0.65rem;
+      font-weight: 700;
+      color: #cbd5e1;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      line-height: 1.1;
+      width: 52px;
+      flex-shrink: 0;
+    }
+
+    .rotation-grid {
+      flex: 1;
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 4px;
+    }
+
+    .rot-btn {
+      background: #334155;
+      border: 2px solid transparent;
+      color: white;
+      padding: 8px 0;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 800;
+      cursor: pointer;
+      position: relative;
+      touch-action: manipulation;
+    }
+
+    .rot-btn.active {
+      background: var(--setter-red);
+      border-color: #fca5a5;
+      box-shadow: 0 0 10px rgba(220, 38, 38, 0.5);
+    }
+
+    .rot-btn.customized::after {
+      content: '';
+      position: absolute;
+      top: 3px;
+      right: 3px;
+      width: 6px;
+      height: 6px;
+      background-color: #38bdf8;
+      border-radius: 50%;
+    }
+
+    .reset-btn {
+      flex-shrink: 0;
+      background: #334155;
+      border: 1px solid #475569;
+      color: #cbd5e1;
+      font-size: 0.8rem;
+      font-weight: 700;
+      padding: 8px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    .reset-btn:active { transform: scale(0.95); }
+
+    /* Botão de inversão Levantador <-> Oposto (aceso quando a inversão está ativa) */
+    .reset-btn.active-swap {
+      background: #f59e0b;
+      border-color: #fde68a;
+      color: #1e293b;
+      box-shadow: 0 0 10px rgba(245, 158, 11, 0.6);
+    }
+
+    /* A quadra ocupa todo o espaço restante */
+    .court-card {
+      flex: 1 1 0;
+      min-height: 0;
+      background: var(--card-bg);
+      padding: 4px;
+      border-radius: 12px;
+      border: 1px solid #334155;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    canvas {
+      display: block;
+      border-radius: 8px;
+      touch-action: none;
+      cursor: pointer;
+    }
+
+    /* Status compacto */
+    .status-card {
+      flex: 0 0 auto;
+      background: var(--card-bg);
+      padding: 6px 8px;
+      border-radius: 10px;
+      border: 1px solid #334155;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 44px;
+    }
+
+    .status-badge {
+      flex-shrink: 0;
+      padding: 4px 9px;
+      border-radius: 16px;
+      font-size: 0.7rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      white-space: nowrap;
+    }
+
+    .status-badge.legal {
+      background: rgba(16, 185, 129, 0.2);
+      color: #34d399;
+      border: 1px solid var(--success);
+    }
+
+    .status-badge.illegal {
+      background: rgba(239, 68, 68, 0.2);
+      color: #f87171;
+      border: 1px solid var(--danger);
+    }
+
+    .status-text {
+      flex: 1;
+      font-size: 0.75rem;
+      font-weight: 600;
+      line-height: 1.2;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+
+    .status-text.ok { color: #a7f3d0; }
+    .status-text.bad { color: #fca5a5; }
+
+    /* Legenda em uma linha */
+    .legend-card {
+      flex: 0 0 auto;
+      background: var(--card-bg);
+      padding: 6px 8px;
+      border-radius: 10px;
+      border: 1px solid #334155;
+      display: flex;
+      justify-content: space-between;
+      gap: 4px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.65rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .legend-color {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      border: 1.5px solid #ffffff;
+      flex-shrink: 0;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 90px;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: #0284c7;
+      color: white;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-weight: 700;
+      font-size: 0.85rem;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      opacity: 0;
+      transition: all 0.3s ease;
+      pointer-events: none;
+      z-index: 100;
+    }
+
+    .toast.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+
+    <div class="controls-card">
+      <div class="rotation-grid" id="rotationGrid">
+        <button class="rot-btn" data-pos="1">P1</button>
+        <button class="rot-btn" data-pos="6">P6</button>
+        <button class="rot-btn" data-pos="5">P5</button>
+        <button class="rot-btn" data-pos="4">P4</button>
+        <button class="rot-btn" data-pos="3">P3</button>
+        <button class="rot-btn active" data-pos="2">P2</button>
+      </div>
+      <button class="reset-btn" id="resetBtn" title="Restaurar posição padrão">↺</button>
+      <button class="reset-btn" id="swapBtn" title="Inverter Levantador e Oposto">⇄</button>
+    </div>
+
+    <div class="court-card" id="courtCard">
+      <canvas id="courtCanvas" width="450" height="700"></canvas>
+    </div>
+
+    <div class="status-card">
+      <span id="statusBadge" class="status-badge legal">Válido</span>
+      <span id="statusText" class="status-text ok">✓ Todos respeitam a sobreposição (FIVB 7.4).</span>
+    </div>
+
+    <div class="legend-card">
+      <div class="legend-item"><div class="legend-color" style="background: var(--setter-red);"></div>Levantador</div>
+      <div class="legend-item"><div class="legend-color" style="background: var(--libero-yellow);"></div>Líbero</div>
+      <div class="legend-item"><div class="legend-color" style="background: var(--spiker-blue);"></div>Ponteiro</div>
+      <div class="legend-item"><div class="legend-color" style="background: var(--middle-green);"></div>Central</div>
+      <div class="legend-item"><div class="legend-color" style="background: var(--opposite-purple);"></div>Oposto</div>
+    </div>
+
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script>
+    const canvas = document.getElementById('courtCanvas');
+    const ctx = canvas.getContext('2d');
+    const courtCard = document.getElementById('courtCard');
+
+    // Impede qualquer rolagem / "puxar para atualizar" do navegador embutido
+    document.addEventListener('touchmove', (e) => { e.preventDefault(); }, { passive: false });
+    document.addEventListener('gesturestart', (e) => e.preventDefault());
+    document.addEventListener('contextmenu', (e) => e.preventDefault());
+    // Se por qualquer motivo a página rolar, volta imediatamente ao topo
+    window.addEventListener('scroll', () => { window.scrollTo(0, 0); }, { passive: true });
+    document.addEventListener('scroll', () => {
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    }, { passive: true });
+
+    // Ajusta o tamanho visual do canvas ao espaço disponível, mantendo a proporção 9:14
+    function getViewportHeight() {
+      const sh = window.screen && window.screen.height ? window.screen.height : 0;
+      const inner = window.innerHeight || 0;
+      let h;
+      if (inner && (!sh || inner >= sh * 0.5)) {
+        // Altura confiável: usa exatamente a janela visível (sem "chutar" para mais)
+        h = inner;
+      } else {
+        // Navegador embutido reportando altura minúscula no início: usa a maior medida disponível
+        h = Math.max(
+          inner,
+          (window.visualViewport && window.visualViewport.height) || 0,
+          document.documentElement.clientHeight || 0
+        );
+        if (sh && h < sh * 0.5) h = sh - 140;
+      }
+      // Folga de segurança: nunca deixa o conteúdo maior que a janela visível
+      return Math.max(200, Math.floor(h) - 2);
+    }
+
+    // v6: TRAVA do tamanho. Na v2 cada recálculo descontava 2px e o navegador do WhatsApp
+    // reagia com novo resize (a janela acompanha o conteúdo), então a tela encolhia sem parar.
+    // Aqui a altura é calculada UMA vez e congelada; resizes seguintes não mudam mais nada.
+    // EXTRA_SAFE_PX = margem inferior fixa que mantém o conteúdo menor que a área visível
+    // (é ela que evita a barra de rolagem). Se ainda aparecer barra, aumente (ex.: 60);
+    // se sobrar muito espaço escuro embaixo, diminua (ex.: 20).
+    const EXTRA_SAFE_PX = 36;
+    let lockedH = 0;
+    let lockedW = 0;
+
+    function getLockedHeight() {
+      const w = window.innerWidth || 0;
+      // Só recalcula se a largura mudar bastante (girar o celular)
+      if (lockedH && lockedW && Math.abs(w - lockedW) > 50) lockedH = 0;
+      if (!lockedH) {
+        lockedH = Math.max(200, getViewportHeight() - EXTRA_SAFE_PX);
+        lockedW = w;
+      }
+      return lockedH;
+    }
+
+    function fitCanvas() {
+      const container = document.querySelector('.container');
+      const appH = getLockedHeight();
+      document.documentElement.style.setProperty('--app-h', appH + 'px');
+
+      // Altura disponível para a quadra = altura total - demais blocos - espaçamentos
+      const others = Array.from(container.children)
+        .filter(el => el !== courtCard)
+        .reduce((sum, el) => sum + el.offsetHeight, 0);
+      const gaps = 6 * (container.children.length - 1);
+      const cardH = Math.max(120, appH - 12 - others - gaps);
+      courtCard.style.flex = '0 0 auto';
+      courtCard.style.height = cardH + 'px';
+
+      const cs = getComputedStyle(courtCard);
+      const availW = courtCard.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      const availH = cardH - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - 2;
+      const scale = Math.min(availW / canvas.width, availH / canvas.height);
+      if (scale > 0) {
+        canvas.style.width = Math.floor(canvas.width * scale) + 'px';
+        canvas.style.height = Math.floor(canvas.height * scale) + 'px';
+      }
+    }
+
+    const baseRotationOrder = [
+      { id: 'L', name: 'Levantador', role: 'L', color: '#dc2626' },
+      { id: 'C1', name: 'Central 1', role: 'C1', color: '#10b981' },
+      { id: 'P1', name: 'Ponteiro 1', role: 'P1', color: '#2563eb' },
+      { id: 'O', name: 'Oposto', role: 'O', color: '#7c3aed' },
+      { id: 'C2', name: 'Central 2', role: 'C2', color: '#10b981' },
+      { id: 'P2', name: 'Ponteiro 2', role: 'P2', color: '#2563eb' }
+    ];
+
+    const courtPositions = {
+      4: { x: 0.25, y: 0.22 },
+      3: { x: 0.50, y: 0.22 },
+      2: { x: 0.75, y: 0.22 },
+      5: { x: 0.25, y: 0.75 },
+      6: { x: 0.50, y: 0.75 },
+      1: { x: 0.75, y: 0.75 }
+    };
+
+    let currentSetterPos = 2;
+    let players = [];
+    let draggedPlayer = null;
+    let selectedPlayer = null;
+    let dragOffset = { x: 0, y: 0 };
+    let faults = [];
+
+    const savedCustomPositions = {};
+
+    // Inversão Levantador <-> Oposto, guardada por rotação (true = invertidos)
+    const swapped = {};
+
+    const courtMargin = 35;
+    const courtWidth = canvas.width - (courtMargin * 2);
+    const courtHeight = canvas.height - (courtMargin * 2);
+    const tokenRadius = 26;
+
+    let courtPressTimer = null;
+    let isCourtDragging = false;
+    let startTouchCoords = null;
+    const LONG_PRESS_MS = 650;
+
+    function getRelatedPlayers(selectedPosNum) {
+      const p = {};
+      players.forEach(pl => p[pl.posNum] = pl);
+
+      const related = [];
+      if (selectedPosNum === 4) { if (p[3]) related.push({ player: p[3], axis: 'x' }); if (p[5]) related.push({ player: p[5], axis: 'y' }); }
+      if (selectedPosNum === 3) { if (p[4]) related.push({ player: p[4], axis: 'x' }); if (p[2]) related.push({ player: p[2], axis: 'x' }); if (p[6]) related.push({ player: p[6], axis: 'y' }); }
+      if (selectedPosNum === 2) { if (p[3]) related.push({ player: p[3], axis: 'x' }); if (p[1]) related.push({ player: p[1], axis: 'y' }); }
+
+      if (selectedPosNum === 5) { if (p[6]) related.push({ player: p[6], axis: 'x' }); if (p[4]) related.push({ player: p[4], axis: 'y' }); }
+      if (selectedPosNum === 6) { if (p[5]) related.push({ player: p[5], axis: 'x' }); if (p[1]) related.push({ player: p[1], axis: 'x' }); if (p[3]) related.push({ player: p[3], axis: 'y' }); }
+      if (selectedPosNum === 1) { if (p[6]) related.push({ player: p[6], axis: 'x' }); if (p[2]) related.push({ player: p[2], axis: 'y' }); }
+
+      return related;
+    }
+
+    function initPlayers(useSaved = true) {
+      const posOrder = [1, 6, 5, 4, 3, 2];
+      const setterIdxInPosOrder = posOrder.indexOf(currentSetterPos);
+
+      players = [];
+      selectedPlayer = null;
+
+      const hasSaved = useSaved && savedCustomPositions[currentSetterPos];
+
+      baseRotationOrder.forEach((p, idx) => {
+        // Se a rotação está invertida, Levantador e Oposto trocam de lugar na quadra
+        let slotIdx = idx;
+        if (swapped[currentSetterPos]) {
+          if (p.id === 'L') slotIdx = 3;
+          else if (p.id === 'O') slotIdx = 0;
+        }
+        const assignedPos = posOrder[(setterIdxInPosOrder + slotIdx) % 6];
+        const isBackRow = [1, 6, 5].includes(assignedPos);
+
+        let finalRole = p.role;
+        let finalColor = p.color;
+
+        if ((p.role === 'C1' || p.role === 'C2') && isBackRow) {
+          finalRole = 'Lib';
+          finalColor = '#f59e0b';
+        }
+
+        let pixelX, pixelY;
+
+        if (hasSaved && savedCustomPositions[currentSetterPos][p.id]) {
+          pixelX = savedCustomPositions[currentSetterPos][p.id].x;
+          pixelY = savedCustomPositions[currentSetterPos][p.id].y;
+        } else {
+          const gridCoords = courtPositions[assignedPos];
+          pixelX = courtMargin + gridCoords.x * courtWidth;
+          pixelY = courtMargin + gridCoords.y * courtHeight;
+        }
+
+        players.push({
+          id: p.id,
+          posNum: assignedPos,
+          role: finalRole,
+          color: finalColor,
+          x: pixelX,
+          y: pixelY
+        });
+      });
+
+      updateButtonsUI();
+      validatePositions();
+      draw();
+    }
+
+    function setRotation(pos) {
+      currentSetterPos = pos;
+      initPlayers(true);
+    }
+
+    function resetCurrentRotation() {
+      delete savedCustomPositions[currentSetterPos];
+      delete swapped[currentSetterPos];   // o reset também desfaz a inversão
+      initPlayers(false);
+      showToast(`Posição P${currentSetterPos} resetada!`);
+    }
+
+    // Inverte Levantador e Oposto na rotação atual (liga/desliga)
+    function toggleSwap() {
+      const L = players.find(p => p.id === 'L');
+      const O = players.find(p => p.id === 'O');
+      if (!L || !O) return;
+
+      // Troca posição na quadra (número da posição e coordenadas)
+      [L.posNum, O.posNum] = [O.posNum, L.posNum];
+      [L.x, O.x] = [O.x, L.x];
+      [L.y, O.y] = [O.y, L.y];
+
+      // Mantém coerente uma posição já salva manualmente para esta rotação
+      const saved = savedCustomPositions[currentSetterPos];
+      if (saved && saved.L && saved.O) {
+        const tmp = saved.L;
+        saved.L = saved.O;
+        saved.O = tmp;
+      }
+
+      if (swapped[currentSetterPos]) delete swapped[currentSetterPos];
+      else swapped[currentSetterPos] = true;
+
+      selectedPlayer = null;
+      updateButtonsUI();
+      validatePositions();
+      draw();
+      showToast(swapped[currentSetterPos]
+        ? `⇄ Invertidos: Levantador em P${L.posNum}, Oposto em P${O.posNum}`
+        : `Inversão desfeita: Levantador em P${L.posNum}, Oposto em P${O.posNum}`);
+    }
+
+    function saveCurrentPositions(pos) {
+      if (!savedCustomPositions[pos]) {
+        savedCustomPositions[pos] = {};
+      }
+      players.forEach(p => {
+        savedCustomPositions[pos][p.id] = { x: p.x, y: p.y };
+      });
+      updateButtonsUI();
+      showToast(`★ Posição P${pos} salva com sucesso!`);
+    }
+
+    function updateButtonsUI() {
+      document.querySelectorAll('.rot-btn').forEach(btn => {
+        const pos = parseInt(btn.getAttribute('data-pos'));
+        btn.classList.toggle('active', pos === currentSetterPos);
+        btn.classList.toggle('customized', !!savedCustomPositions[pos]);
+      });
+      const swapBtn = document.getElementById('swapBtn');
+      if (swapBtn) swapBtn.classList.toggle('active-swap', !!swapped[currentSetterPos]);
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      toast.innerText = msg;
+      toast.classList.add('show');
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, 2000);
+    }
+
+    function validatePositions() {
+      faults = [];
+
+      const p = {};
+      players.forEach(pl => p[pl.posNum] = pl);
+
+      if (p[5].y <= p[4].y) {
+        faults.push({ p1: p[5], p2: p[4], msg: `P5 (${p[5].role}) ultrapassou P4 (${p[4].role}) em relação à rede.` });
+      }
+      if (p[6].y <= p[3].y) {
+        faults.push({ p1: p[6], p2: p[3], msg: `P6 (${p[6].role}) ultrapassou P3 (${p[3].role}) em relação à rede.` });
+      }
+      if (p[1].y <= p[2].y) {
+        faults.push({ p1: p[1], p2: p[2], msg: `P1 (${p[1].role}) ultrapassou P2 (${p[2].role}) em relação à rede.` });
+      }
+
+      if (p[4].x >= p[3].x) {
+        faults.push({ p1: p[4], p2: p[3], msg: `P4 (${p[4].role}) cruzou à direita de P3 (${p[3].role}).` });
+      }
+      if (p[3].x >= p[2].x) {
+        faults.push({ p1: p[3], p2: p[2], msg: `P3 (${p[3].role}) cruzou à direita de P2 (${p[2].role}).` });
+      }
+
+      if (p[5].x >= p[6].x) {
+        faults.push({ p1: p[5], p2: p[6], msg: `P5 (${p[5].role}) cruzou à direita de P6 (${p[6].role}).` });
+      }
+      if (p[6].x >= p[1].x) {
+        faults.push({ p1: p[6], p2: p[1], msg: `P6 (${p[6].role}) cruzou à direita de P1 (${p[1].role}).` });
+      }
+
+      updateStatusUI();
+    }
+
+    function updateStatusUI() {
+      const badge = document.getElementById('statusBadge');
+      const text = document.getElementById('statusText');
+
+      if (faults.length === 0) {
+        badge.className = 'status-badge legal';
+        badge.innerText = 'Válido';
+        text.className = 'status-text ok';
+        text.innerText = '✓ Todos respeitam a sobreposição (FIVB 7.4).';
+      } else {
+        badge.className = 'status-badge illegal';
+        badge.innerText = `${faults.length} falta(s)`;
+        text.className = 'status-text bad';
+        const extra = faults.length > 1 ? ` (+${faults.length - 1})` : '';
+        text.innerText = `⚠️ ${faults[0].msg}${extra}`;
+      }
+    }
+
+    function drawCourt() {
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = '#0284c7';
+      ctx.fillRect(courtMargin, courtMargin, courtWidth, courtHeight);
+
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(courtMargin, courtMargin, courtWidth, courtHeight);
+
+      const attackLineY = courtMargin + (courtHeight * 0.333);
+      ctx.beginPath();
+      ctx.moveTo(courtMargin, attackLineY);
+      ctx.lineTo(courtMargin + courtWidth, attackLineY);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+      ctx.font = 'bold 12px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('LINHA DE 3M', courtMargin + 8, attackLineY - 6);
+
+      ctx.beginPath();
+      ctx.moveTo(courtMargin - 10, courtMargin);
+      ctx.lineTo(courtMargin + courtWidth + 10, courtMargin);
+      ctx.strokeStyle = '#f8fafc';
+      ctx.lineWidth = 8;
+      ctx.stroke();
+
+      ctx.fillStyle = '#ef4444';
+      ctx.fillRect(courtMargin - 12, courtMargin - 6, 12, 12);
+      ctx.fillRect(courtMargin + courtWidth, courtMargin - 6, 12, 12);
+
+      ctx.fillStyle = '#f1f5f9';
+      ctx.font = 'bold 13px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('REDE (SAQUE ADVERSÁRIO)', canvas.width / 2, courtMargin - 14);
+    }
+
+    function drawAllowedZone() {
+      if (!selectedPlayer) return;
+
+      const p = {};
+      players.forEach(pl => p[pl.posNum] = pl);
+
+      const pos = selectedPlayer.posNum;
+
+      let minX = courtMargin + tokenRadius;
+      let maxX = courtMargin + courtWidth - tokenRadius;
+      let minY = courtMargin + tokenRadius;
+      let maxY = courtMargin + courtHeight - tokenRadius;
+
+      if (pos === 4) maxX = p[3].x;
+      if (pos === 3) { minX = p[4].x; maxX = p[2].x; }
+      if (pos === 2) minX = p[3].x;
+
+      if (pos === 5) maxX = p[6].x;
+      if (pos === 6) { minX = p[5].x; maxX = p[1].x; }
+      if (pos === 1) minX = p[6].x;
+
+      if (pos === 4) maxY = p[5].y;
+      if (pos === 3) maxY = p[6].y;
+      if (pos === 2) maxY = p[1].y;
+
+      if (pos === 5) minY = p[4].y;
+      if (pos === 6) minY = p[3].y;
+      if (pos === 1) minY = p[2].y;
+
+      const relatedList = getRelatedPlayers(pos);
+
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+
+      relatedList.forEach(item => {
+        ctx.beginPath();
+        if (item.axis === 'x') {
+          const lineX = item.player.x;
+          const startY = Math.max(courtMargin, minY);
+          const endY = Math.min(courtMargin + courtHeight, maxY);
+
+          if (startY < endY) {
+            ctx.moveTo(lineX, startY);
+            ctx.lineTo(lineX, endY);
+            ctx.stroke();
+          }
+        } else if (item.axis === 'y') {
+          const lineY = item.player.y;
+          const startX = Math.max(courtMargin, minX);
+          const endX = Math.min(courtMargin + courtWidth, maxX);
+
+          if (startX < endX) {
+            ctx.moveTo(startX, lineY);
+            ctx.lineTo(endX, lineY);
+            ctx.stroke();
+          }
+        }
+      });
+
+      ctx.setLineDash([]);
+    }
+
+    function drawFaultLines() {
+      faults.forEach(f => {
+        ctx.beginPath();
+        ctx.moveTo(f.p1.x, f.p1.y);
+        ctx.lineTo(f.p2.x, f.p2.y);
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 4;
+        ctx.setLineDash([8, 6]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      });
+    }
+
+    function drawPlayers() {
+      const relatedPosNums = selectedPlayer ? getRelatedPlayers(selectedPlayer.posNum).map(r => r.player.posNum) : [];
+
+      players.forEach(p => {
+        const isSelected = selectedPlayer && selectedPlayer.id === p.id;
+        const isRelated = relatedPosNums.includes(p.posNum);
+
+        if (isRelated && !isSelected) {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, tokenRadius + 6, 0, Math.PI * 2);
+          ctx.strokeStyle = '#38bdf8';
+          ctx.lineWidth = 2;
+          ctx.setLineDash([4, 3]);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+
+        if (isSelected) {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, tokenRadius + 7, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(56, 189, 248, 0.25)';
+          ctx.fill();
+          ctx.strokeStyle = '#38bdf8';
+          ctx.lineWidth = 3;
+          ctx.stroke();
+        }
+
+        // Destaque da inversão: anel dourado tracejado em volta do Levantador e do Oposto
+        const isInverted = swapped[currentSetterPos] && (p.id === 'L' || p.id === 'O');
+        if (isInverted) {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, tokenRadius + 12, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(251, 191, 36, 0.18)';
+          ctx.fill();
+          ctx.strokeStyle = '#fbbf24';
+          ctx.lineWidth = 3;
+          ctx.setLineDash([6, 4]);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+
+        ctx.beginPath();
+        ctx.arc(p.x, p.y + 4, tokenRadius, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, tokenRadius, 0, Math.PI * 2);
+        ctx.fillStyle = p.color;
+        ctx.fill();
+        ctx.lineWidth = isSelected ? 3.5 : 3;
+        ctx.strokeStyle = isSelected ? '#38bdf8' : (isInverted ? '#fbbf24' : '#ffffff');
+        ctx.stroke();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = 'bold 16px sans-serif';
+        ctx.fillText(`P${p.posNum}`, p.x, p.y - 7);
+
+        ctx.font = 'bold 13px sans-serif';
+        ctx.fillStyle = '#fef08a';
+        ctx.fillText(p.role, p.x, p.y + 10);
+
+        // Selo "⇄" no canto do jogador invertido
+        if (isInverted) {
+          const bx = p.x + tokenRadius - 2;
+          const by = p.y - tokenRadius + 2;
+          ctx.beginPath();
+          ctx.arc(bx, by, 12, 0, Math.PI * 2);
+          ctx.fillStyle = '#fbbf24';
+          ctx.fill();
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = '#1e293b';
+          ctx.stroke();
+          ctx.fillStyle = '#1e293b';
+          ctx.font = 'bold 15px sans-serif';
+          ctx.fillText('⇄', bx, by + 1);
+        }
+      });
+    }
+
+    function draw() {
+      drawCourt();
+      drawAllowedZone();
+      drawFaultLines();
+      drawPlayers();
+    }
+
+    function getCanvasCoords(e) {
+      const rect = canvas.getBoundingClientRect();
+      const pt = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]) || e;
+      return {
+        x: (pt.clientX - rect.left) * (canvas.width / rect.width),
+        y: (pt.clientY - rect.top) * (canvas.height / rect.height)
+      };
+    }
+
+    function cancelCourtLongPress() {
+      if (courtPressTimer) {
+        clearTimeout(courtPressTimer);
+        courtPressTimer = null;
+      }
+    }
+
+    function onPointerDown(e) {
+      if (e.cancelable) e.preventDefault();
+      // Captura o ponteiro: o arrasto continua no canvas mesmo se o dedo sair da área
+      try { if (e.pointerId !== undefined) canvas.setPointerCapture(e.pointerId); } catch (_) {}
+      const coords = getCanvasCoords(e);
+      startTouchCoords = coords;
+      isCourtDragging = false;
+
+      let clickedPlayer = null;
+
+      for (let i = players.length - 1; i >= 0; i--) {
+        const p = players[i];
+        const dist = Math.hypot(coords.x - p.x, coords.y - p.y);
+        if (dist <= tokenRadius + 10) {
+          clickedPlayer = p;
+          draggedPlayer = p;
+          dragOffset.x = coords.x - p.x;
+          dragOffset.y = coords.y - p.y;
+          break;
+        }
+      }
+
+      selectedPlayer = clickedPlayer || null;
+
+      draw();
+
+      cancelCourtLongPress();
+      courtPressTimer = setTimeout(() => {
+        if (!isCourtDragging) {
+          saveCurrentPositions(currentSetterPos);
+          draggedPlayer = null;
+        }
+      }, LONG_PRESS_MS);
+    }
+
+    function onPointerMove(e) {
+      if (e.cancelable) e.preventDefault();
+      const coords = getCanvasCoords(e);
+
+      if (startTouchCoords && Math.hypot(coords.x - startTouchCoords.x, coords.y - startTouchCoords.y) > 8) {
+        isCourtDragging = true;
+        cancelCourtLongPress();
+      }
+
+      if (!draggedPlayer) return;
+
+      let newX = coords.x - dragOffset.x;
+      let newY = coords.y - dragOffset.y;
+
+      newX = Math.max(courtMargin + tokenRadius, Math.min(courtMargin + courtWidth - tokenRadius, newX));
+      newY = Math.max(courtMargin + tokenRadius, Math.min(courtMargin + courtHeight - tokenRadius, newY));
+
+      draggedPlayer.x = newX;
+      draggedPlayer.y = newY;
+
+      validatePositions();
+      draw();
+    }
+
+    function onPointerUp(e) {
+      cancelCourtLongPress();
+      draggedPlayer = null;
+      isCourtDragging = false;
+      startTouchCoords = null;
+    }
+
+    // v2: Pointer Events (unifica toque e mouse). Com touch-action:none o navegador
+    // não assume o gesto, então arrastar para cima/baixo não vira rolagem.
+    canvas.addEventListener('pointerdown', onPointerDown);
+    canvas.addEventListener('pointermove', onPointerMove);
+    canvas.addEventListener('pointerup', onPointerUp);
+    canvas.addEventListener('pointercancel', onPointerUp);
+    canvas.addEventListener('lostpointercapture', onPointerUp);
+
+    document.getElementById('resetBtn').addEventListener('click', resetCurrentRotation);
+    document.getElementById('swapBtn').addEventListener('click', toggleSwap);
+
+    const rotButtons = document.querySelectorAll('.rot-btn');
+
+    rotButtons.forEach(btn => {
+      let pressTimer = null;
+      let isLongPress = false;
+
+      const pos = parseInt(btn.getAttribute('data-pos'));
+
+      function startPress() {
+        isLongPress = false;
+        cancelPress();
+        pressTimer = setTimeout(() => {
+          isLongPress = true;
+          if (currentSetterPos !== pos) {
+            setRotation(pos);
+          }
+          saveCurrentPositions(pos);
+        }, LONG_PRESS_MS);
+      }
+
+      function cancelPress() {
+        if (pressTimer) {
+          clearTimeout(pressTimer);
+          pressTimer = null;
+        }
+      }
+
+      function endPress() {
+        cancelPress();
+        if (!isLongPress) {
+          setRotation(pos);
+        }
+      }
+
+      btn.addEventListener('mousedown', startPress);
+      btn.addEventListener('mouseup', endPress);
+      btn.addEventListener('mouseleave', cancelPress);
+
+      btn.addEventListener('touchstart', (e) => {
+        startPress();
+      }, { passive: true });
+
+      btn.addEventListener('touchend', (e) => {
+        if (e.cancelable) e.preventDefault(); // evita o clique "fantasma" duplicado
+        endPress();
+      });
+
+      btn.addEventListener('touchcancel', cancelPress);
+    });
+
+    // Reajusta ao girar a tela / redimensionar / aparecer-sumir barras do navegador
+    window.addEventListener('resize', fitCanvas);
+    window.addEventListener('orientationchange', () => setTimeout(fitCanvas, 150));
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', fitCanvas);
+
+    initPlayers();
+    fitCanvas();
+    // Reajusta várias vezes no início (o navegador do WhatsApp demora a informar o tamanho real)
+    [50, 150, 400, 800, 1500, 3000].forEach(t => setTimeout(fitCanvas, t));
+    window.addEventListener('load', fitCanvas);
+  </script>
+</body>
+</html>
