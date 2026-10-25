@@ -808,35 +808,103 @@
       }, 2000);
     }
 
+    // ===== Pés do jogador (a regra 7.4.3 é medida pelos pés) =====
+    // Um pé à frente/esquerda (para a rede) e outro atrás/direita, como na figura
+    const FOOT_RX = 7, FOOT_RY = 13;
+    const FOOT_DEFS = [
+      { dx: -33, dy: -14, rot: -0.35 },
+      { dx: 22,  dy: 30,  rot: 0.35 }
+    ];
+
+    function getFeet(pl) {
+      return FOOT_DEFS.map(f => {
+        const c = Math.cos(f.rot), s = Math.sin(f.rot);
+        // semi-extensões da caixa que envolve a elipse inclinada
+        const hx = Math.sqrt(FOOT_RX * FOOT_RX * c * c + FOOT_RY * FOOT_RY * s * s);
+        const hy = Math.sqrt(FOOT_RX * FOOT_RX * s * s + FOOT_RY * FOOT_RY * c * c);
+        return { x: pl.x + f.dx, y: pl.y + f.dy, rot: f.rot, hx, hy };
+      });
+    }
+
+    // Limites ocupados pelos pés: minY = pé mais perto da rede, maxY = pé mais longe da rede
+    function footBounds(pl) {
+      const feet = getFeet(pl);
+      return {
+        minX: Math.min(...feet.map(f => f.x - f.hx)),
+        maxX: Math.max(...feet.map(f => f.x + f.hx)),
+        minY: Math.min(...feet.map(f => f.y - f.hy)),
+        maxY: Math.max(...feet.map(f => f.y + f.hy))
+      };
+    }
+
+    function drawFeet(pl) {
+      const rx = FOOT_RX, ry = FOOT_RY;
+      getFeet(pl).forEach((f, i) => {
+        ctx.save();
+        ctx.translate(f.x, f.y);
+        ctx.rotate(f.rot);
+        if (i === 1) ctx.scale(-1, 1); // um pé esquerdo e um direito
+
+        // Pegada: parte da frente (larga) + calcanhar (menor), contorno único
+        const parts = [
+          [0, -ry * 0.3, rx * 0.98, ry * 0.68],
+          [rx * 0.05, ry * 0.52, rx * 0.72, ry * 0.52]
+        ];
+        ctx.fillStyle = '#0f172a';
+        parts.forEach(([ex, ey, erx, ery]) => {
+          ctx.beginPath();
+          ctx.ellipse(ex, ey, erx + 1.8, ery + 1.8, 0, 0, Math.PI * 2);
+          ctx.fill();
+        });
+        ctx.fillStyle = '#f8fafc';
+        parts.forEach(([ex, ey, erx, ery]) => {
+          ctx.beginPath();
+          ctx.ellipse(ex, ey, erx, ery, 0, 0, Math.PI * 2);
+          ctx.fill();
+        });
+        // fenda entre os dedos
+        ctx.beginPath();
+        ctx.moveTo(-rx * 0.5, -ry * 0.78);
+        ctx.quadraticCurveTo(0, -ry * 0.98, rx * 0.55, -ry * 0.78);
+        ctx.lineWidth = 1.3;
+        ctx.strokeStyle = '#94a3b8';
+        ctx.stroke();
+        ctx.restore();
+      });
+    }
+
     function validatePositions() {
       faults = [];
 
       const p = {};
       players.forEach(pl => p[pl.posNum] = pl);
 
-      if (p[5].y <= p[4].y) {
+      const fb = {};
+      players.forEach(pl => fb[pl.posNum] = footBounds(pl));
+
+      // 7.4.2.1 / 7.4.3.1: jogador de trás precisa ter ao menos parte de um pé no mesmo nível
+      // (ou mais longe da rede) que o pé da frente do jogador da frente correspondente
+      if (fb[5].maxY < fb[4].minY) {
         faults.push({ p1: p[5], p2: p[4], msg: `P5 (${p[5].role}) ultrapassou P4 (${p[4].role}) em relação à rede.` });
       }
-      if (p[6].y <= p[3].y) {
+      if (fb[6].maxY < fb[3].minY) {
         faults.push({ p1: p[6], p2: p[3], msg: `P6 (${p[6].role}) ultrapassou P3 (${p[3].role}) em relação à rede.` });
       }
-      if (p[1].y <= p[2].y) {
+      if (fb[1].maxY < fb[2].minY) {
         faults.push({ p1: p[1], p2: p[2], msg: `P1 (${p[1].role}) ultrapassou P2 (${p[2].role}) em relação à rede.` });
       }
 
-      if (p[4].x >= p[3].x) {
-        faults.push({ p1: p[4], p2: p[3], msg: `P4 (${p[4].role}) cruzou à direita de P3 (${p[3].role}).` });
-      }
-      if (p[3].x >= p[2].x) {
-        faults.push({ p1: p[3], p2: p[2], msg: `P3 (${p[3].role}) cruzou à direita de P2 (${p[2].role}).` });
-      }
-
-      if (p[5].x >= p[6].x) {
-        faults.push({ p1: p[5], p2: p[6], msg: `P5 (${p[5].role}) cruzou à direita de P6 (${p[6].role}).` });
-      }
-      if (p[6].x >= p[1].x) {
-        faults.push({ p1: p[6], p2: p[1], msg: `P6 (${p[6].role}) cruzou à direita de P1 (${p[1].role}).` });
-      }
+      // 7.4.2.2 / 7.4.3.2: ordem lateral — o da esquerda precisa ter ao menos parte de um pé
+      // no mesmo nível (ou mais à esquerda) que o pé mais à direita do vizinho
+      const lateral = (l, r) => {
+        if (fb[l].minX > fb[r].maxX) {
+          faults.push({ p1: p[l], p2: p[r], msg: `P${l} (${p[l].role}) cruzou à direita de P${r} (${p[r].role}).` });
+        }
+      };
+      lateral(4, 3);
+      lateral(3, 2);
+      lateral(5, 6);
+      lateral(6, 1);
 
       updateStatusUI();
     }
@@ -913,21 +981,25 @@
       let minY = courtMargin + tokenRadius;
       let maxY = courtMargin + courtHeight - tokenRadius;
 
-      if (pos === 4) maxX = p[3].x;
-      if (pos === 3) { minX = p[4].x; maxX = p[2].x; }
-      if (pos === 2) minX = p[3].x;
+      // Limites das linhas guia: terminam exatamente onde cruzam as outras linhas (bordas dos pés)
+      const fbz = {};
+      players.forEach(pl => fbz[pl.posNum] = footBounds(pl));
 
-      if (pos === 5) maxX = p[6].x;
-      if (pos === 6) { minX = p[5].x; maxX = p[1].x; }
-      if (pos === 1) minX = p[6].x;
+      if (pos === 4) maxX = fbz[3].maxX;
+      if (pos === 3) { minX = fbz[4].minX; maxX = fbz[2].maxX; }
+      if (pos === 2) minX = fbz[3].minX;
 
-      if (pos === 4) maxY = p[5].y;
-      if (pos === 3) maxY = p[6].y;
-      if (pos === 2) maxY = p[1].y;
+      if (pos === 5) maxX = fbz[6].maxX;
+      if (pos === 6) { minX = fbz[5].minX; maxX = fbz[1].maxX; }
+      if (pos === 1) minX = fbz[6].minX;
 
-      if (pos === 5) minY = p[4].y;
-      if (pos === 6) minY = p[3].y;
-      if (pos === 1) minY = p[2].y;
+      if (pos === 4) maxY = fbz[5].maxY;
+      if (pos === 3) maxY = fbz[6].maxY;
+      if (pos === 2) maxY = fbz[1].maxY;
+
+      if (pos === 5) minY = fbz[4].minY;
+      if (pos === 6) minY = fbz[3].minY;
+      if (pos === 1) minY = fbz[2].minY;
 
       const relatedList = getRelatedPlayers(pos);
 
@@ -942,8 +1014,11 @@
           (f.p1.posNum === pos && f.p2.posNum === item.player.posNum) ||
           (f.p2.posNum === pos && f.p1.posNum === item.player.posNum));
         ctx.strokeStyle = violated ? '#ef4444' : '#38bdf8';
+        const nb = footBounds(item.player);
         if (item.axis === 'x') {
-          const lineX = item.player.x;
+          // vizinho à direita: limite é o pé mais à direita dele; à esquerda: o mais à esquerda
+          const col = { 4: 0, 3: 1, 2: 2, 5: 0, 6: 1, 1: 2 };
+          const lineX = col[item.player.posNum] > col[pos] ? nb.maxX : nb.minX;
           const startY = Math.max(courtMargin, minY);
           const endY = Math.min(courtMargin + courtHeight, maxY);
 
@@ -953,7 +1028,8 @@
             ctx.stroke();
           }
         } else if (item.axis === 'y') {
-          const lineY = item.player.y;
+          // jogador da frente: linha no pé de trás do de trás; jogador de trás: linha no pé da frente do da frente
+          const lineY = [4, 3, 2].includes(pos) ? nb.maxY : nb.minY;
           const startX = Math.max(courtMargin, minX);
           const endX = Math.min(courtMargin + courtWidth, maxX);
 
@@ -1021,6 +1097,8 @@
           ctx.stroke();
           ctx.setLineDash([]);
         }
+
+        drawFeet(p);
 
         ctx.beginPath();
         ctx.arc(p.x, p.y + 4, tokenRadius, 0, Math.PI * 2);
@@ -1186,12 +1264,46 @@
         `<rect x="${c.x + c.w + 2}" y="${c.y - 3}" width="6" height="6" fill="#ef4444"/>`;
     }
 
+    // Pezinhos do jogador no tutorial (mesmo desenho e posição do app, na escala do jogador)
+    function tutFeet(x, y, r) {
+      const k = r / 26;
+      let out = '';
+      FOOT_DEFS.forEach((f, i) => {
+        const sx = (i === 1 ? -1 : 1) * k;
+        const parts = [
+          [0, -FOOT_RY * 0.3, FOOT_RX * 0.98, FOOT_RY * 0.68],
+          [FOOT_RX * 0.05, FOOT_RY * 0.52, FOOT_RX * 0.72, FOOT_RY * 0.52]
+        ];
+        out += `<g transform="translate(${(x + f.dx * k).toFixed(2)} ${(y + f.dy * k).toFixed(2)}) rotate(${(f.rot * 180 / Math.PI).toFixed(1)}) scale(${sx.toFixed(3)} ${k.toFixed(3)})">`;
+        parts.forEach(([ex, ey, erx, ery]) => { out += `<ellipse cx="${ex}" cy="${ey}" rx="${erx + 1.8}" ry="${ery + 1.8}" fill="#0f172a"/>`; });
+        parts.forEach(([ex, ey, erx, ery]) => { out += `<ellipse cx="${ex}" cy="${ey}" rx="${erx}" ry="${ery}" fill="#f8fafc"/>`; });
+        out += `</g>`;
+      });
+      return out;
+    }
+
+    // Limites ocupados pelos pés de um jogador no tutorial
+    function tutFootBounds(x, y, r) {
+      const k = r / 26;
+      const b = { minX: 1e9, maxX: -1e9, minY: 1e9, maxY: -1e9 };
+      FOOT_DEFS.forEach(f => {
+        const c = Math.cos(f.rot), sn = Math.sin(f.rot);
+        const hx = k * Math.sqrt(FOOT_RX * FOOT_RX * c * c + FOOT_RY * FOOT_RY * sn * sn);
+        const hy = k * Math.sqrt(FOOT_RX * FOOT_RX * sn * sn + FOOT_RY * FOOT_RY * c * c);
+        const fx = x + f.dx * k, fy = y + f.dy * k;
+        b.minX = Math.min(b.minX, fx - hx); b.maxX = Math.max(b.maxX, fx + hx);
+        b.minY = Math.min(b.minY, fy - hy); b.maxY = Math.max(b.maxY, fy + hy);
+      });
+      return b;
+    }
+
     function tutToken(x, y, r, color, top, bottom, o) {
       o = o || {};
       let s = '';
       if (o.halo) {
         s += `<circle cx="${x}" cy="${y}" r="${r + (o.gap || 5)}" fill="${o.haloFill || 'none'}" stroke="${o.halo}" stroke-width="2"${o.dash ? ` stroke-dasharray="${o.dash}"` : ''}/>`;
       }
+      if (o.feet !== false) s += tutFeet(x, y, r);
       s += `<circle cx="${x}" cy="${y + 2}" r="${r}" fill="rgba(0,0,0,.35)"/>`;
       s += `<circle cx="${x}" cy="${y}" r="${r}" fill="${color}" stroke="${o.stroke || '#fff'}" stroke-width="2"/>`;
       const t = 'text-anchor="middle" dominant-baseline="central" font-weight="700"';
@@ -1238,7 +1350,7 @@
     const TUT_SLIDES = [
       {
         title: 'Bem-vindo',
-        text: 'Simule a rotação 5x1 e veja na hora se as posições respeitam a regra de sobreposição da FIVB. As cores mostram a função de cada jogador, e o central que está na linha de trás aparece como Líbero (amarelo).',
+        text: 'Simule a rotação 5x1 e veja na hora se as posições respeitam a regra de sobreposição da FIVB. As cores mostram a função de cada jogador, e o central que está na linha de trás aparece como Líbero (amarelo). A regra é conferida pelos pezinhos de cada jogador, como na regra oficial.',
         svg: (() => {
           const c = { x: 14, y: 10, w: 112, h: 170 };
           let s = tutCourt(c) + tutDefaultTokens(c, 14);
@@ -1272,14 +1384,15 @@
       },
       {
         title: 'Arraste os jogadores',
-        text: 'Toque e arraste qualquer jogador para testar uma formação. Ao tocar nele, as linhas azuis tracejadas mostram o limite permitido, e os vizinhos que o limitam ficam com um anel tracejado.',
+        text: 'Toque e arraste qualquer jogador para testar uma formação. Ao tocar nele, as linhas azuis tracejadas mostram o limite permitido, medido pelos pés dos vizinhos, e os vizinhos que o limitam ficam com um anel tracejado.',
         svg: (() => {
           const c = { x: 100, y: 8, w: 120, h: 174 };
           const p4 = tutPos(c, 4), p3 = tutPos(c, 3), p5 = tutPos(c, 5);
+          const f3 = tutFootBounds(p3.x, p3.y, 12), f5 = tutFootBounds(p5.x, p5.y, 12);
           let s = tutCourt(c);
-          s += `<rect x="${c.x}" y="${c.y}" width="${p3.x - c.x}" height="${p5.y - c.y}" fill="rgba(56,189,248,.15)"/>`;
-          s += `<line x1="${p3.x}" y1="${c.y}" x2="${p3.x}" y2="${p5.y}" stroke="#38bdf8" stroke-width="2" stroke-dasharray="5 3"/>`;
-          s += `<line x1="${c.x}" y1="${p5.y}" x2="${p3.x}" y2="${p5.y}" stroke="#38bdf8" stroke-width="2" stroke-dasharray="5 3"/>`;
+          s += `<rect x="${c.x}" y="${c.y}" width="${f3.maxX - c.x}" height="${f5.maxY - c.y}" fill="rgba(56,189,248,.15)"/>`;
+          s += `<line x1="${f3.maxX}" y1="${c.y}" x2="${f3.maxX}" y2="${f5.maxY}" stroke="#38bdf8" stroke-width="2" stroke-dasharray="5 3"/>`;
+          s += `<line x1="${c.x}" y1="${f5.maxY}" x2="${f3.maxX}" y2="${f5.maxY}" stroke="#38bdf8" stroke-width="2" stroke-dasharray="5 3"/>`;
           const others = [[2, TUT.red, 'L'], [6, TUT.blue, 'P'], [1, TUT.yellow, 'Lib']];
           others.forEach(([n, col, lab]) => { const p = tutPos(c, n); s += tutToken(p.x, p.y, 12, col, null, lab); });
           s += tutToken(p3.x, p3.y, 12, TUT.blue, null, 'P', { halo: '#38bdf8', dash: '4 3', gap: 5 });
@@ -1293,12 +1406,12 @@
       },
       {
         title: 'Faltas de posição',
-        text: 'Se alguém passar do limite, uma linha vermelha tracejada liga os dois jogadores em falta, e a barra de status mostra quantas faltas existem e qual foi a primeira, como neste exemplo.',
+        text: 'A falta é medida pelos pés. Aqui o P5 passou totalmente para a direita dos pés do P6. Uma linha vermelha tracejada liga os dois jogadores em falta, e a barra de status mostra quantas faltas existem e qual foi a primeira.',
         svg: (() => {
           const c = { x: 14, y: 8, w: 112, h: 174 };
           let s = tutCourt(c);
-          const a = { x: 27, y: 22 };
-          const b = tutPos(c, 4);
+          const a = { x: 100, y: 96 };
+          const b = tutPos(c, 6);
           s += `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="#ef4444" stroke-width="3.5" stroke-dasharray="6 4"/>`;
           [[4, TUT.green, 'C'], [3, TUT.blue, 'P'], [2, TUT.red, 'L'], [6, TUT.blue, 'P'], [1, TUT.yellow, 'Lib']].forEach(([n, col, lab]) => {
             const p = tutPos(c, n); s += tutToken(p.x, p.y, 10, col, null, lab);
@@ -1307,9 +1420,8 @@
           s += `<rect x="142" y="26" width="170" height="104" rx="10" fill="#1e293b" stroke="#334155"/>`;
           s += `<rect x="152" y="38" width="74" height="20" rx="10" fill="rgba(239,68,68,.2)" stroke="#ef4444"/>`;
           s += tutText(189, 48.5, '1 FALTA(S)', 10, '#f87171', 'middle', 800);
-          s += tutText(152, 78, '⚠ P5 (O) ultrapassou', 11, '#fca5a5', 'start', 600);
-          s += tutText(152, 93, 'P4 (C1) em relação', 11, '#fca5a5', 'start', 600);
-          s += tutText(152, 108, 'à rede.', 11, '#fca5a5', 'start', 600);
+          s += tutText(152, 78, '⚠ P5 (O) cruzou à', 11, '#fca5a5', 'start', 600);
+          s += tutText(152, 93, 'direita de P6 (P1).', 11, '#fca5a5', 'start', 600);
           s += `<line x1="152" y1="152" x2="182" y2="152" stroke="#ef4444" stroke-width="3" stroke-dasharray="6 4"/>`;
           s += tutText(190, 152, 'jogadores em falta', 11, '#94a3b8', 'start', 600);
           return tutSvg(s);
