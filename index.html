@@ -668,18 +668,27 @@
     let startTouchCoords = null;
     const LONG_PRESS_MS = 650;
 
+    // Entre os outros jogadores da fila, devolve o que impõe o limite mais apertado
+    // (menor 'maxX' para o jogador da esquerda; maior 'minX' para o da direita)
+    function tightest(cands, key, lowest) {
+      return cands.filter(Boolean).reduce((a, b) => {
+        const va = footBounds(a)[key], vb = footBounds(b)[key];
+        return (lowest ? vb < va : vb > va) ? b : a;
+      });
+    }
+
     function getRelatedPlayers(selectedPosNum) {
       const p = {};
       players.forEach(pl => p[pl.posNum] = pl);
 
       const related = [];
-      if (selectedPosNum === 4) { if (p[3]) related.push({ player: p[3], axis: 'x' }); if (p[5]) related.push({ player: p[5], axis: 'y' }); }
+      if (selectedPosNum === 4) { if (p[3]) related.push({ player: tightest([p[3], p[2]], 'maxX', true), axis: 'x' }); if (p[5]) related.push({ player: p[5], axis: 'y' }); }
       if (selectedPosNum === 3) { if (p[4]) related.push({ player: p[4], axis: 'x' }); if (p[2]) related.push({ player: p[2], axis: 'x' }); if (p[6]) related.push({ player: p[6], axis: 'y' }); }
-      if (selectedPosNum === 2) { if (p[3]) related.push({ player: p[3], axis: 'x' }); if (p[1]) related.push({ player: p[1], axis: 'y' }); }
+      if (selectedPosNum === 2) { if (p[3]) related.push({ player: tightest([p[3], p[4]], 'minX', false), axis: 'x' }); if (p[1]) related.push({ player: p[1], axis: 'y' }); }
 
-      if (selectedPosNum === 5) { if (p[6]) related.push({ player: p[6], axis: 'x' }); if (p[4]) related.push({ player: p[4], axis: 'y' }); }
+      if (selectedPosNum === 5) { if (p[6]) related.push({ player: tightest([p[6], p[1]], 'maxX', true), axis: 'x' }); if (p[4]) related.push({ player: p[4], axis: 'y' }); }
       if (selectedPosNum === 6) { if (p[5]) related.push({ player: p[5], axis: 'x' }); if (p[1]) related.push({ player: p[1], axis: 'x' }); if (p[3]) related.push({ player: p[3], axis: 'y' }); }
-      if (selectedPosNum === 1) { if (p[6]) related.push({ player: p[6], axis: 'x' }); if (p[2]) related.push({ player: p[2], axis: 'y' }); }
+      if (selectedPosNum === 1) { if (p[6]) related.push({ player: tightest([p[6], p[5]], 'minX', false), axis: 'x' }); if (p[2]) related.push({ player: p[2], axis: 'y' }); }
 
       return related;
     }
@@ -919,6 +928,9 @@
       lateral(3, 2);
       lateral(5, 6);
       lateral(6, 1);
+      // Esquerda × direita diretamente (a regra compara com "os outros jogadores" da fila)
+      lateral(4, 2);
+      lateral(5, 1);
 
       updateStatusUI();
     }
@@ -999,13 +1011,13 @@
       const fbz = {};
       players.forEach(pl => fbz[pl.posNum] = footBounds(pl));
 
-      if (pos === 4) maxX = fbz[3].maxX;
+      if (pos === 4) maxX = Math.min(fbz[3].maxX, fbz[2].maxX);
       if (pos === 3) { minX = fbz[4].minX; maxX = fbz[2].maxX; }
-      if (pos === 2) minX = fbz[3].minX;
+      if (pos === 2) minX = Math.max(fbz[3].minX, fbz[4].minX);
 
-      if (pos === 5) maxX = fbz[6].maxX;
+      if (pos === 5) maxX = Math.min(fbz[6].maxX, fbz[1].maxX);
       if (pos === 6) { minX = fbz[5].minX; maxX = fbz[1].maxX; }
-      if (pos === 1) minX = fbz[6].minX;
+      if (pos === 1) minX = Math.max(fbz[6].minX, fbz[5].minX);
 
       if (pos === 4) maxY = fbz[5].maxY;
       if (pos === 3) maxY = fbz[6].maxY;
