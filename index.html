@@ -461,6 +461,76 @@
       flex-shrink: 0;
     }
 
+
+    /* ===== Dica inicial: destaque pulsante no P3 + balão ===== */
+    .hint-layer {
+      position: fixed;
+      inset: 0;
+      z-index: 40;
+      pointer-events: none;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.35s ease;
+    }
+    .hint-layer.show { opacity: 1; visibility: visible; }
+
+    .hint-ring {
+      position: absolute;
+      border-radius: 50%;
+      border: 3px solid #38bdf8;
+      background: rgba(56, 189, 248, 0.18);
+      transform: translate(-50%, -50%);
+      animation: hintPulse 1.3s ease-in-out infinite;
+    }
+
+    .hint-ring::after {
+      content: '';
+      position: absolute;
+      inset: -3px;
+      border-radius: 50%;
+      border: 3px solid #38bdf8;
+      animation: hintWave 1.3s ease-out infinite;
+    }
+
+    @keyframes hintPulse {
+      0%, 100% { transform: translate(-50%, -50%) scale(1);    box-shadow: 0 0 6px 2px rgba(56,189,248,.45); }
+      50%      { transform: translate(-50%, -50%) scale(1.12); box-shadow: 0 0 18px 8px rgba(56,189,248,.75); }
+    }
+
+    @keyframes hintWave {
+      0%   { transform: scale(1);   opacity: 0.8; }
+      100% { transform: scale(1.8); opacity: 0; }
+    }
+
+    .hint-bubble {
+      position: absolute;
+      max-width: 230px;
+      background: #0284c7;
+      color: #fff;
+      border: 1px solid #7dd3fc;
+      border-radius: 12px;
+      padding: 8px 12px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      line-height: 1.3;
+      text-align: center;
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
+      transform: translateX(-50%);
+    }
+
+    .hint-bubble::before {
+      content: '';
+      position: absolute;
+      top: -7px;
+      left: var(--arrow-x, 50%);
+      width: 12px;
+      height: 12px;
+      background: #0284c7;
+      border-left: 1px solid #7dd3fc;
+      border-top: 1px solid #7dd3fc;
+      transform: translateX(-50%) rotate(45deg);
+    }
+
     .toast {
       position: fixed;
       bottom: 90px;
@@ -527,6 +597,12 @@
   </div>
 
   <div id="toast" class="toast"></div>
+
+  <!-- Dica inicial (destaque pulsante no P3) -->
+  <div id="hintLayer" class="hint-layer" aria-hidden="true">
+    <div id="hintRing" class="hint-ring"></div>
+    <div id="hintBubble" class="hint-bubble">Movimente o jogador para as posições desejadas na quadra</div>
+  </div>
 
   <!-- Pop-up do tutorial -->
   <div id="tutorialOverlay" class="tutorial-overlay" role="dialog" aria-modal="true" aria-label="Tutorial">
@@ -624,6 +700,7 @@
         canvas.style.width = Math.floor(canvas.width * scale) + 'px';
         canvas.style.height = Math.floor(canvas.height * scale) + 'px';
       }
+      if (typeof updateHint === 'function') updateHint();
     }
 
     const baseRotationOrder = [
@@ -1172,6 +1249,7 @@
       drawAllowedZone();
       drawFaultLines();
       drawPlayers();
+      updateHint();
     }
 
     function getCanvasCoords(e) {
@@ -1244,6 +1322,7 @@
 
       draggedPlayer.x = newX;
       draggedPlayer.y = newY;
+      dismissHint();
 
       validatePositions();
       draw();
@@ -1627,6 +1706,59 @@
     window.addEventListener('resize', fitCanvas);
     window.addEventListener('orientationchange', () => setTimeout(fitCanvas, 150));
     if (window.visualViewport) window.visualViewport.addEventListener('resize', fitCanvas);
+
+
+    // ===== Dica inicial: aparece 2 s após abrir e some após o primeiro movimento =====
+    const HINT_KEY = 'voleiRegraHintDone';
+    const HINT_DELAY_MS = 2000;
+    const hintLayer = document.getElementById('hintLayer');
+    const hintRing = document.getElementById('hintRing');
+    const hintBubble = document.getElementById('hintBubble');
+    let hintDone = false;
+    let hintVisible = false;
+    try { hintDone = localStorage.getItem(HINT_KEY) === '1'; } catch (_) {}
+
+    function updateHint() {
+      if (!hintVisible) return;
+      const target = players.find(pl => pl.posNum === 3);
+      if (!target) return;
+      const rect = canvas.getBoundingClientRect();
+      const sx = rect.width / canvas.width;
+      const sy = rect.height / canvas.height;
+      const cx = rect.left + target.x * sx;
+      const cy = rect.top + target.y * sy;
+      const d = (tokenRadius + 12) * 2 * sx;
+
+      hintRing.style.width = d + 'px';
+      hintRing.style.height = d + 'px';
+      hintRing.style.left = cx + 'px';
+      hintRing.style.top = cy + 'px';
+
+      // balão abaixo do pé do jogador, sem sair da tela
+      const bw = hintBubble.offsetWidth;
+      const vw = window.innerWidth;
+      const left = Math.max(bw / 2 + 8, Math.min(vw - bw / 2 - 8, cx));
+      hintBubble.style.left = left + 'px';
+      hintBubble.style.top = (cy + (tokenRadius + 34) * sy + 8) + 'px';
+      hintBubble.style.setProperty('--arrow-x', (bw / 2 + (cx - left)) + 'px');
+    }
+
+    function showHint() {
+      if (hintDone) return;
+      hintVisible = true;
+      updateHint();
+      hintLayer.classList.add('show');
+    }
+
+    function dismissHint() {
+      if (hintDone) return;
+      hintDone = true;
+      hintVisible = false;
+      hintLayer.classList.remove('show');
+      try { localStorage.setItem(HINT_KEY, '1'); } catch (_) {}
+    }
+
+    if (!hintDone) setTimeout(showHint, HINT_DELAY_MS);
 
     initPlayers();
     fitCanvas();
